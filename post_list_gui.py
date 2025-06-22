@@ -29,10 +29,12 @@ def open_post_list(user_id):
         conn = get_connection()
         with conn.cursor() as cursor:
             cursor.execute("""
-                SELECT p.post_id, p.user_id, u.nickname, i.title, p.price, p.location, i.description
+                SELECT p.post_id, p.user_id, u.nickname, i.title, p.price, p.location, i.description,
+                           i.product_type, i.size, im.image_url
                 FROM Post p
                 JOIN User   u ON p.user_id = u.user_id
                 JOIN Item   i ON p.item_id = i.item_id
+                JOIN Image im ON i.item_id = im.item_item_id
                 WHERE p.post_id NOT IN (
                     SELECT t.post_id
                     FROM `Transaction` t
@@ -63,12 +65,13 @@ def open_post_list(user_id):
         # 상세 정보 표시
         detail_text.delete("1.0", tk.END)
         detail_text.insert(tk.END,
-            f"🆔 게시글 ID: {post['post_id']}\n"
-            f"👤 작성자 닉네임: {post['nickname']}\n"
+            f"🆔 게시글ID: {post['post_id']}\n"
+            f"👤 작성자: {post['nickname']}\n"
             f"📌 제목: {post['title']}\n"
+            f"👕 제품종류(사이즈): {post['product_type']}({post['size']})\n"
+            f"📝 설명: {post['description']}\n"
             f"💸 가격: {post['price']}원\n"
-            f"📍 위치: {post['location']}\n"
-            f"📝 설명: {post['description']}"
+            f"📍 거래장소: {post['location']}"
         )
 
         # 내가 쓴 글이면 약속 버튼 숨김

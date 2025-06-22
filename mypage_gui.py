@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
-from appointment_list_gui import open_appointment_list
+from appointment_lender_list_gui import open_appointment_list
 from appointment_borrowed_list_gui import open_borrowed_appointment_list
 from transaction_list_gui import (
     open_transaction_list,
@@ -137,8 +137,8 @@ def open_mypage(user_id):
         )
         lbl_badge.config(text=f"🏅 뱃지: {u.get('badge','신규')}")
         lbl_penalty.config(text=f"⛔ 정지: {u.get('penalty',0)}일")
-        lbl_done.config(text=f"✅ 완료: {u.get('cumulative_done',0)}회")
-        lbl_cancel.config(text=f"❌ 취소: {u.get('cumulative_cancel',0)}회")
+        lbl_done.config(text=f"✅ 거래 완료: {u.get('cumulative_done',0)}회")
+        lbl_cancel.config(text=f"❌ 거래 취소: {u.get('cumulative_cancel',0)}회")
 
     update_labels(user)   # 첫 화면용
 

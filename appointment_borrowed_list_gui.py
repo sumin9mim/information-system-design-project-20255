@@ -28,7 +28,7 @@ def open_borrowed_appointment_list(user_id):
                             u.nickname     AS lender_nickname,
                             a.rent_datetime, a.return_datetime,
                             a.rent_location, a.return_location,
-                            a.appointment_state
+                            a.appointment_state, i.product_type, i.size
                     FROM appointment a
                     JOIN User  u ON a.lender_id = u.user_id
                     JOIN Post  p ON a.post_id   = p.post_id      -- 🔄
@@ -41,8 +41,8 @@ def open_borrowed_appointment_list(user_id):
                 for app in appointments:
                     listbox.insert(
                         tk.END,
-                        f"[{app['appointment_id']}] {app['item_title']} "
-                        f"(post:{app['post_id']}) - "
+                        f"[{app['appointment_id']}]{app['item_title']}"
+                        f"제품:{app['product_type']}"
                         f"대여자:{app['lender_nickname']} - "
                         f"상태:{app['appointment_state']}"
                     )
@@ -65,7 +65,8 @@ def open_borrowed_appointment_list(user_id):
         details_text.insert(
             tk.END,
             f"약속 ID   : {app['appointment_id']}\n"
-            f"게시글 ID : {app['post_id']} ({app['item_title']})\n"  # 🔄
+            f"게시글: {app['item_title']} (post{app['post_id']})\n" 
+            f"제품: {app['product_type']}({app['size']})\n"
             f"대여자    : {app['lender_nickname']}\n"
             f"대여 일시 : {app['rent_datetime']}\n"
             f"반납 일시 : {app['return_datetime']}\n"

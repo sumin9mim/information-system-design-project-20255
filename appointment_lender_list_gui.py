@@ -29,25 +29,23 @@ def open_appointment_list(user_id):
     details_text = tk.Text(win, height=8, width=100)
     details_text.pack(pady=5)
 
-    btn_frame = tk.Frame(win)
-    btn_frame.pack(pady=5)
-
-    accept_btn = tk.Button(btn_frame, text="✅ 수락")
-    reject_btn = tk.Button(btn_frame, text="❌ 거절")
-    accept_btn.pack_forget()
-    reject_btn.pack_forget()
+    btn_frame = tk.Frame(win); btn_frame.pack(pady=5)
+    accept_btn = tk.Button(btn_frame, text="✅ 약속 수락")
+    reject_btn = tk.Button(btn_frame, text="❌ 약속 거절")
+    accept_btn.pack_forget(); reject_btn.pack_forget()
 
     appointments = []
 
-    def safe_pack(w):  # helper
+    # ───────────────────── helper ───────────────────── #
+    def safe_pack(w):    # 버튼 보이기
         if not w.winfo_ismapped():
             w.pack(side=tk.LEFT, padx=10)
 
-    def safe_forget(w):
+    def safe_forget(w):  # 버튼 숨기기
         if w.winfo_ismapped():
             w.pack_forget()
 
-    # ----------------------------- refresh -------------------------------- #
+    # ─────────────────── refresh ────────────────────── #
     def refresh_appointments():
         nonlocal appointments
         listbox.delete(0, tk.END)
@@ -60,13 +58,14 @@ def open_appointment_list(user_id):
                             a.rent_datetime, a.return_datetime,
                             a.rent_location, a.return_location,
                             a.appointment_state,
-                            i.title            AS item_title     -- 🔄 Post·Item 조인으로 제목 가져오기
+                            i.title            AS item_title,
+                            i.product_type, i.size               -- 🔄 추가
                     FROM appointment a
                     JOIN User  u  ON a.borrower_id = u.user_id
                     JOIN Post  p  ON a.post_id    = p.post_id
                     JOIN Item  i  ON p.item_id    = i.item_id
                     WHERE a.lender_id = %s
-                      AND a.appointment_state = 'WAITING'
+                      AND a.appointment_state = 'PENDING'       -- 🔄 상태 필터
                     ORDER BY a.rent_datetime DESC
                 """, (user_id,))
                 appointments = cursor.fetchall()
@@ -81,15 +80,12 @@ def open_appointment_list(user_id):
         except Exception as e:
             messagebox.showerror("DB 오류", str(e))
         finally:
-            if conn:
-                conn.close()
+            if conn: conn.close()
 
-        # 초기화
-        safe_forget(accept_btn)
-        safe_forget(reject_btn)
+        safe_forget(accept_btn); safe_forget(reject_btn)
         details_text.delete("1.0", tk.END)
 
-    # ----------------------------- update --------------------------------- #
+    # ────────────────── update DB ───────────────────── #
     def update_appointment(appointment_id, new_state):
         try:
             conn = get_connection()
@@ -99,6 +95,7 @@ def open_appointment_list(user_id):
                     (new_state, appointment_id)
                 )
 
+                # 수락 → 거래 생성
                 if new_state == 'CONFIRMED':
                     cursor.execute("""
                         SELECT lender_id, borrower_id, post_id
@@ -119,7 +116,7 @@ def open_appointment_list(user_id):
                         """, (
                             tid, appointment_id,
                             appt['lender_id'], appt['borrower_id'], appt['post_id'],
-                            'Pending'          # 🔄 상태 값
+                            'PENDING'         
                         ))
                         messagebox.showinfo("성공", "✅ 거래가 생성되었습니다.")
 
@@ -129,15 +126,13 @@ def open_appointment_list(user_id):
         except Exception as e:
             messagebox.showerror("DB 오류", str(e))
         finally:
-            if conn:
-                conn.close()
+            if conn: conn.close()
 
-    # ----------------------------- select --------------------------------- #
+    # ─────────────── select 이벤트 ─────────────────── #
     def on_select(event):
         sel = listbox.curselection()
         if not sel:
-            safe_forget(accept_btn)
-            safe_forget(reject_btn)
+            safe_forget(accept_btn); safe_forget(reject_btn)
             details_text.delete("1.0", tk.END)
             return
 
@@ -147,27 +142,27 @@ def open_appointment_list(user_id):
             tk.END,
             f"약속 ID: {app['appointment_id']}\n"
             f"게시글 ID: {app['post_id']} ({app['item_title']})\n"
-            f"borrower: {app['borrower_nickname']} (user_id: {app['borrower_id']})\n"
+            f"제품종류(사이즈): {app['product_type']} ({app['size']})\n"  # 🔄
+            f"요청자: {app['borrower_nickname']}\n"
             f"대여 일시: {app['rent_datetime']}\n"
             f"반납 일시: {app['return_datetime']}\n"
             f"대여 장소: {app['rent_location']}\n"
             f"반납 장소: {app['return_location']}\n"
             f"상태: {app['appointment_state']}\n\n"
-            "※ 상태가 WAITING일 때만 수락/거절 버튼이 보입니다."
+            "※ 상태가 PENDING일 때만 수락/거절 버튼이 보입니다."
         )
 
-        if app['appointment_state'].strip().upper() == 'WAITING':
+        if app['appointment_state'] == 'PENDING':
             accept_btn.config(
                 command=lambda aid=app['appointment_id']: update_appointment(aid, 'CONFIRMED')
             )
             reject_btn.config(
-                command=lambda aid=app['appointment_id']: update_appointment(aid, 'DECLINED')
+                command=lambda aid=app['appointment_id']: update_appointment(aid, 'CANCELLED')
             )
-            safe_pack(accept_btn)
-            safe_pack(reject_btn)
+            safe_pack(accept_btn); safe_pack(reject_btn)
         else:
-            safe_forget(accept_btn)
-            safe_forget(reject_btn)
+            safe_forget(accept_btn); safe_forget(reject_btn)
 
+    # ──────────────────────────────── #
     listbox.bind('<<ListboxSelect>>', on_select)
     refresh_appointments()
