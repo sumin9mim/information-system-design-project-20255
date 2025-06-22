@@ -22,19 +22,29 @@ def open_borrowed_appointment_list(user_id):
             conn = get_connection()
             with conn.cursor() as cursor:
                 cursor.execute("""
-                    SELECT a.appointment_id, a.post_id, u.nickname AS lender_nickname,
-                           a.rent_datetime, a.return_datetime, a.rent_location, a.return_location,
-                           a.appointment_state
+                    SELECT  a.appointment_id,
+                            a.post_id,
+                            i.title        AS item_title,          -- 🔄
+                            u.nickname     AS lender_nickname,
+                            a.rent_datetime, a.return_datetime,
+                            a.rent_location, a.return_location,
+                            a.appointment_state
                     FROM appointment a
-                    JOIN User u ON a.lender_id = u.user_id
+                    JOIN User  u ON a.lender_id = u.user_id
+                    JOIN Post  p ON a.post_id   = p.post_id      -- 🔄
+                    JOIN Item  i ON p.item_id   = i.item_id      -- 🔄
                     WHERE a.borrower_id = %s
                     ORDER BY a.rent_datetime DESC
                 """, (user_id,))
                 appointments = cursor.fetchall()
 
                 for app in appointments:
-                    listbox.insert(tk.END,
-                        f"[{app['appointment_id']}] 게시글ID:{app['post_id']} - 대여자:{app['lender_nickname']} - 상태:{app['appointment_state']}"
+                    listbox.insert(
+                        tk.END,
+                        f"[{app['appointment_id']}] {app['item_title']} "
+                        f"(post:{app['post_id']}) - "
+                        f"대여자:{app['lender_nickname']} - "
+                        f"상태:{app['appointment_state']}"
                     )
         except Exception as e:
             messagebox.showerror("DB 오류", str(e))
@@ -52,17 +62,17 @@ def open_borrowed_appointment_list(user_id):
         app = appointments[sel[0]]
 
         details_text.delete("1.0", tk.END)
-        details_text.insert(tk.END,
-            f"약속 ID: {app['appointment_id']}\n"
-            f"게시글 ID: {app['post_id']}\n"
-            f"lender 닉네임: {app['lender_nickname']}\n"
-            f"대여 일시: {app['rent_datetime']}\n"
-            f"반납 일시: {app['return_datetime']}\n"
-            f"대여 장소: {app['rent_location']}\n"
-            f"반납 장소: {app['return_location']}\n"
-            f"약속 상태: {app['appointment_state']}"
+        details_text.insert(
+            tk.END,
+            f"약속 ID   : {app['appointment_id']}\n"
+            f"게시글 ID : {app['post_id']} ({app['item_title']})\n"  # 🔄
+            f"대여자    : {app['lender_nickname']}\n"
+            f"대여 일시 : {app['rent_datetime']}\n"
+            f"반납 일시 : {app['return_datetime']}\n"
+            f"대여 장소 : {app['rent_location']}\n"
+            f"반납 장소 : {app['return_location']}\n"
+            f"약속 상태 : {app['appointment_state']}"
         )
 
     listbox.bind('<<ListboxSelect>>', on_select)
-
     refresh_appointments()

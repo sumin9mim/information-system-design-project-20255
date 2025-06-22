@@ -38,22 +38,26 @@ def open_transaction_list(user_id):
         try:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT t.transaction_id, t.post_id, t.lender_id, t.borrower_id,
-                           t.transaction_state, t.lender_confirm, t.borrower_confirm,
-                           t.rent_at,
-                           u1.nickname AS lender, u2.nickname AS borrower
+                    SELECT  t.transaction_id, t.post_id, t.lender_id, t.borrower_id,
+                            t.transaction_state, t.lender_confirm, t.borrower_confirm,
+                            t.rent_at,
+                            u1.nickname AS lender, u2.nickname AS borrower,
+                            i.title      AS item_title          -- 🔄 제목
                     FROM `Transaction` t
-                    LEFT JOIN `User` u1 ON t.lender_id = u1.user_id
+                    LEFT JOIN `User` u1 ON t.lender_id  = u1.user_id
                     LEFT JOIN `User` u2 ON t.borrower_id = u2.user_id
+                    JOIN  Post  p  ON t.post_id = p.post_id
+                    JOIN  Item  i  ON p.item_id = i.item_id
                     WHERE t.transaction_state = 'Pending'
                       AND (t.lender_id = %s OR t.borrower_id = %s)
                     ORDER BY t.rent_at DESC
                 """, (user_id, user_id))
                 transactions = cur.fetchall()
             for tr in transactions:
-                listbox.insert(tk.END,
-                    f"[{tr['transaction_id']}] 게시글:{tr['post_id']} - "
-                    f"대여자:{tr['lender']} / 요청자:{tr['borrower']}"
+                listbox.insert(
+                    tk.END,
+                    f"[{tr['transaction_id']}] {tr['item_title']} "
+                    f"(post:{tr['post_id']}) - 대여자:{tr['lender']} / 요청자:{tr['borrower']}"
                 )
         except Exception as e:
             messagebox.showerror("DB 오류", str(e))
@@ -66,8 +70,10 @@ def open_transaction_list(user_id):
         try:
             with conn.cursor() as cur:
                 val = 1 if decision == 'Y' else -1
-                cur.execute(f"UPDATE `Transaction` SET {role}_confirm=%s WHERE transaction_id=%s",
-                            (val, txid))
+                cur.execute(f"""
+                    UPDATE `Transaction` SET {role}_confirm=%s
+                    WHERE transaction_id=%s
+                """, (val, txid))
                 cur.execute("""
                     SELECT lender_confirm, borrower_confirm, lender_id, borrower_id
                     FROM `Transaction`
@@ -79,30 +85,36 @@ def open_transaction_list(user_id):
                 if conf['lender_confirm'] == 1 and conf['borrower_confirm'] == 1:
                     state = 'Confirmed'
                     cur.execute(
-                        "UPDATE User SET cumulative_done=cumulative_done+1 WHERE user_id IN (%s,%s)",
+                        "UPDATE User SET cumulative_done = cumulative_done + 1 "
+                        "WHERE user_id IN (%s, %s)",
                         (conf['lender_id'], conf['borrower_id'])
                     )
                     cur.execute(
-                        "UPDATE `Transaction` SET transaction_state=%s, returned_at=NOW() WHERE transaction_id=%s",
+                        "UPDATE `Transaction` "
+                        "SET transaction_state=%s, returned_at=NOW() "
+                        "WHERE transaction_id=%s",
                         (state, txid)
                     )
                 elif conf['lender_confirm'] == -1 or conf['borrower_confirm'] == -1:
                     state = 'Cancelled'
                     cur.execute(
-                        "UPDATE User SET cumulative_cancel=cumulative_cancel+1 WHERE user_id=%s",
+                        "UPDATE User SET cumulative_cancel = cumulative_cancel + 1 "
+                        "WHERE user_id=%s",
                         (user_id,)
                     )
                     cur.execute(
-                        "UPDATE `Transaction` SET transaction_state=%s, cancelled_by=%s WHERE transaction_id=%s",
+                        "UPDATE `Transaction` "
+                        "SET transaction_state=%s, cancelled_by=%s "
+                        "WHERE transaction_id=%s",
                         (state, user_id, txid)
                     )
                 else:
                     state = 'Pending'
                     cur.execute(
-                        "UPDATE `Transaction` SET transaction_state=%s WHERE transaction_id=%s",
+                        "UPDATE `Transaction` SET transaction_state=%s "
+                        "WHERE transaction_id=%s",
                         (state, txid)
                     )
-
                 conn.commit()
             refresh()
         finally:
@@ -118,25 +130,29 @@ def open_transaction_list(user_id):
         tr = transactions[sel[0]]
         # 상세 정보 표시
         details_text.delete("1.0", tk.END)
-        details_text.insert(tk.END,
-            f"거래 ID: {tr['transaction_id']}\n"
-            f"게시글 ID: {tr['post_id']}\n"
-            f"상태: {tr['transaction_state']}\n"
-            f"대여일: {tr['rent_at']}\n"
-            f"대여자 확인: {tr['lender_confirm']}\n"
-            f"요청자 확인: {tr['borrower_confirm']}"
+        details_text.insert(
+            tk.END,
+            f"거래 ID   : {tr['transaction_id']}\n"
+            f"게시글 ID : {tr['post_id']} ({tr['item_title']})\n"
+            f"상태      : {tr['transaction_state']}\n"
+            f"대여일    : {tr['rent_at']}\n"
+            f"대여자 확인 : {tr['lender_confirm']}\n"
+            f"요청자 확인 : {tr['borrower_confirm']}"
         )
         # 버튼 토글
         if tr['transaction_state'] == 'Pending':
             role = 'lender' if user_id == tr['lender_id'] else 'borrower'
-            accept_btn.config(command=lambda tid=tr['transaction_id']: update_confirmation(tid, role, 'Y'))
-            cancel_btn.config(command=lambda tid=tr['transaction_id']: update_confirmation(tid, role, 'CANCELLED'))
+            accept_btn.config(
+                command=lambda tid=tr['transaction_id']: update_confirmation(tid, role, 'Y')
+            )
+            cancel_btn.config(
+                command=lambda tid=tr['transaction_id']: update_confirmation(tid, role, 'CANCELLED')
+            )
             safe_pack(accept_btn)
             safe_pack(cancel_btn)
 
     listbox.bind('<<ListboxSelect>>', on_select)
     refresh()
-
 
 # ✅ 내가 취소한 거래 목록
 def open_cancelled_transaction_list(user_id):
@@ -154,27 +170,32 @@ def open_cancelled_transaction_list(user_id):
                 SELECT t.transaction_id, t.post_id, t.lender_id, t.borrower_id,
                        t.rent_at, t.returned_at,
                        u1.nickname AS lender_nickname,
-                       u2.nickname AS borrower_nickname
+                       u2.nickname AS borrower_nickname,
+                       i.title     AS item_title             -- 🔄 제목
                 FROM Transaction t
-                LEFT JOIN User u1 ON t.lender_id = u1.user_id
-                LEFT JOIN User u2 ON t.borrower_id = u2.user_id
-                WHERE t.transaction_state = 'Cancelled' AND t.cancelled_by = %s
+                LEFT JOIN User  u1 ON t.lender_id  = u1.user_id
+                LEFT JOIN User  u2 ON t.borrower_id = u2.user_id
+                JOIN Post  p ON t.post_id = p.post_id
+                JOIN Item  i ON p.item_id = i.item_id
+                WHERE t.transaction_state = 'Cancelled'
+                  AND t.cancelled_by = %s
                 ORDER BY t.rent_at DESC
             """, (user_id,))
             cancelled = cursor.fetchall()
 
             for tr in cancelled:
-                listbox.insert(tk.END,
-                    f"[거래 ID: {tr['transaction_id']}] 게시글ID:{tr['post_id']} "
-                    f"- 대여자:{tr['lender_nickname']} / 요청자:{tr['borrower_nickname']} "
-                    f"- 대여일:{tr['rent_at']} / 반납일:{tr['returned_at'] if tr['returned_at'] else '미완료'}")
+                listbox.insert(
+                    tk.END,
+                    f"[{tr['transaction_id']}] {tr['item_title']} "
+                    f"(post:{tr['post_id']}) - "
+                    f"대여자:{tr['lender_nickname']} / 요청자:{tr['borrower_nickname']} "
+                    f"- 대여일:{tr['rent_at']} / 반납일:{tr['returned_at'] or '미완료'}"
+                )
     except Exception as e:
         messagebox.showerror("DB 오류", str(e))
     finally:
         if conn:
             conn.close()
-
-
 
 # — 상대방이 취소한 거래 목록 —
 def open_other_cancelled_transaction_list(user_id):
@@ -189,23 +210,18 @@ def open_other_cancelled_transaction_list(user_id):
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT
-                    t.transaction_id,
-                    t.post_id,
-                    t.rent_at,
-                    t.returned_at,
-                    t.lender_id,
-                    t.borrower_id,
-                    t.cancelled_by,
-                    u1.nickname AS lender,
-                    u2.nickname AS borrower
+                SELECT t.transaction_id, t.post_id, t.rent_at, t.returned_at,
+                       t.lender_id, t.borrower_id, t.cancelled_by,
+                       u1.nickname AS lender, u2.nickname AS borrower,
+                       i.title     AS item_title             -- 🔄 제목
                 FROM `Transaction` t
                 LEFT JOIN `User` u1 ON t.lender_id  = u1.user_id
                 LEFT JOIN `User` u2 ON t.borrower_id = u2.user_id
-                WHERE
-                    t.transaction_state = 'Cancelled'
-                    AND t.cancelled_by != %s
-                    AND (t.lender_id = %s OR t.borrower_id = %s)
+                JOIN  Post  p ON t.post_id = p.post_id
+                JOIN  Item  i ON p.item_id = i.item_id
+                WHERE t.transaction_state = 'Cancelled'
+                  AND t.cancelled_by != %s
+                  AND (t.lender_id = %s OR t.borrower_id = %s)
                 ORDER BY t.rent_at DESC
             """, (user_id, user_id, user_id))
             rows = cur.fetchall()
@@ -214,20 +230,19 @@ def open_other_cancelled_transaction_list(user_id):
                 lb.insert(tk.END, "상대방이 취소한 거래가 없습니다.")
             else:
                 for tr in rows:
-                    if tr['cancelled_by'] == tr['lender_id']:
-                        by, who = '대여자', tr['lender']
-                    else:
-                        by, who = '요청자', tr['borrower']
+                    by_role = '대여자' if tr['cancelled_by'] == tr['lender_id'] else '요청자'
+                    by_name = tr['lender'] if by_role == '대여자' else tr['borrower']
                     lb.insert(
                         tk.END,
-                        f"[{tr['transaction_id']}] 게시글:{tr['post_id']} - "
-                        f"취소자({by}):{who} "
+                        f"[{tr['transaction_id']}] {tr['item_title']} "
+                        f"(post:{tr['post_id']}) - "
+                        f"취소자({by_role}):{by_name} "
                         f"({tr['rent_at']} ~ {tr['returned_at'] or '미완료'})"
                     )
     finally:
         conn.close()
 
-
+# ✅ 완료된 거래 목록
 def open_confirmed_transaction_list(user_id):
     win = tk.Toplevel()
     win.title("✅ 완료된 거래 목록")
@@ -251,19 +266,24 @@ def open_confirmed_transaction_list(user_id):
                     SELECT t.transaction_id, t.post_id, t.lender_id, t.borrower_id,
                            t.rent_at, t.returned_at,
                            u1.nickname AS lender_nickname,
-                           u2.nickname AS borrower_nickname
+                           u2.nickname AS borrower_nickname,
+                           i.title     AS item_title           -- 🔄 제목
                     FROM `Transaction` t
-                    LEFT JOIN `User` u1 ON t.lender_id = u1.user_id
+                    LEFT JOIN `User` u1 ON t.lender_id  = u1.user_id
                     LEFT JOIN `User` u2 ON t.borrower_id = u2.user_id
+                    JOIN  Post  p ON t.post_id = p.post_id
+                    JOIN  Item  i ON p.item_id = i.item_id
                     WHERE t.transaction_state = 'Confirmed'
                       AND (t.lender_id = %s OR t.borrower_id = %s)
                     ORDER BY t.rent_at DESC
                 """, (user_id, user_id))
                 confirmed = cursor.fetchall()
                 for tr in confirmed:
-                    listbox.insert(tk.END,
-                        f"[거래 ID: {tr['transaction_id']}] 게시글 ID:{tr['post_id']} "
-                        f"- lender:{tr['lender_nickname']} / borrower:{tr['borrower_nickname']} "
+                    listbox.insert(
+                        tk.END,
+                        f"[{tr['transaction_id']}] {tr['item_title']} "
+                        f"(post:{tr['post_id']}) - "
+                        f"lender:{tr['lender_nickname']} / borrower:{tr['borrower_nickname']} "
                         f"- 대여일:{tr['rent_at']} / 반납일:{tr['returned_at'] or '미완료'}"
                     )
         except Exception as e:
@@ -303,22 +323,26 @@ def open_expired_transaction_list(user_id):
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT t.transaction_id, t.post_id, t.rent_at,
-                       u1.nickname AS lender, u2.nickname AS borrower
+                       u1.nickname AS lender, u2.nickname AS borrower,
+                       i.title     AS item_title           -- 🔄 제목
                 FROM `Transaction` t
-                LEFT JOIN `User` u1 ON t.lender_id = u1.user_id
+                LEFT JOIN `User` u1 ON t.lender_id  = u1.user_id
                 LEFT JOIN `User` u2 ON t.borrower_id = u2.user_id
+                JOIN  Post  p ON t.post_id = p.post_id
+                JOIN  Item  i ON p.item_id = i.item_id
                 WHERE t.transaction_state = 'Expired'
                   AND (t.lender_id = %s OR t.borrower_id = %s)
                 ORDER BY t.rent_at DESC
             """, (user_id, user_id))
             for tr in cur.fetchall():
-                lb.insert(tk.END,
-                    f"[{tr['transaction_id']}] 게시글:{tr['post_id']} - "
-                    f"{tr['lender']} / {tr['borrower']} ({tr['rent_at']})"
+                lb.insert(
+                    tk.END,
+                    f"[{tr['transaction_id']}] {tr['item_title']} "
+                    f"(post:{tr['post_id']}) - {tr['lender']} / {tr['borrower']} "
+                    f"({tr['rent_at']})"
                 )
     finally:
         conn.close()
-
 
 # — 메인 윈도우 예시 —
 if __name__ == "__main__":
