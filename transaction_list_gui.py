@@ -41,13 +41,16 @@ def open_transaction_list(user_id):
                             u1.nickname AS lender_nickname,
                             u2.nickname AS borrower_nickname,
                             i.title      AS title,
-                            i.product_type, i.size
+                            i.product_type, i.size,
+                            a.return_datetime AS returnt,
+                            a.rent_datetime AS rent
                     FROM  `Transaction` t
                     LEFT  JOIN `User` u1 ON t.lender_id   = u1.user_id
                     LEFT  JOIN `User` u2 ON t.borrower_id = u2.user_id
                     JOIN  Post  p ON t.post_id = p.post_id
                     JOIN  Item  i ON p.item_id = i.item_id
-                    WHERE UPPER(t.transaction_state) = 'PENDING'            -- ← 대소문자 무시
+                    LEFT JOIN appointment a ON a.appointment_id = t.appointment_appointment_id
+                    WHERE UPPER(t.transaction_state) = 'PENDING'          
                       AND (t.lender_id = %s OR t.borrower_id = %s)
                     ORDER BY t.rent_at DESC
                 """, (user_id, user_id))
@@ -151,15 +154,15 @@ def open_transaction_list(user_id):
         details_text.delete("1.0", tk.END)
         details_text.insert(
             tk.END,
-            f"거래 ID         : {tr['transaction_id']}\n"
-            f"게시글          : {tr['title']} (post{tr['post_id']})\n"
-            f"제품종류(사이즈): {tr['product_type']} ({tr['size']})\n"
-            f"대여자          : {tr['lender_nickname']}\n"
-            f"요청자          : {tr['borrower_nickname']}\n"
-            f"거래상태        : {tr['transaction_state']}\n"
-            f"대여일          : {tr['rent_at']}\n"
-            f"대여자 확인     : {tr['lender_confirm']}\n"
-            f"요청자 확인     : {tr['borrower_confirm']}"
+            f"거래 ID:    {tr['transaction_id']}\n"
+            f"게시글:     {tr['title']} (post{tr['post_id']})\n"
+            f"제품종류:    {tr['product_type']} ({tr['size']})\n"
+            f"대여자:     {tr['lender_nickname']}\n"
+            f"요청자:     {tr['borrower_nickname']}\n"
+            f"거래상태:    {tr['transaction_state']}\n"
+            f"대여예정일:  {tr['rent']}\n"
+            f"대여자 확인: {tr['lender_confirm']}\n"
+            f"요청자 확인: {tr['borrower_confirm']}"
         )
 
         if tr['transaction_state'].upper() == 'PENDING':
@@ -198,12 +201,15 @@ def open_cancelled_transaction_list(user_id):
                        t.rent_at, t.returned_at,
                        u1.nickname AS lender_nickname,
                        u2.nickname AS borrower_nickname,
-                       i.title     AS item_title             -- 🔄 제목
+                       i.title     AS item_title,             -- 🔄 제목
+                       a.rent_datetime AS rent,
+                       a.return_datetime AS returnt
                 FROM Transaction t
                 LEFT JOIN User  u1 ON t.lender_id  = u1.user_id
                 LEFT JOIN User  u2 ON t.borrower_id = u2.user_id
                 JOIN Post  p ON t.post_id = p.post_id
                 JOIN Item  i ON p.item_id = i.item_id
+                JOIN appointment a ON a.appointment_id = t.appointment_appointment_id
                 WHERE t.transaction_state = 'Cancelled'
                   AND t.cancelled_by = %s
                 ORDER BY t.rent_at DESC
@@ -216,7 +222,7 @@ def open_cancelled_transaction_list(user_id):
                     f"[거래ID: {tr['transaction_id']}]{tr['item_title']}"
                     f"[- 대여자:{tr['lender_nickname']} / 요청자:{tr['borrower_nickname']}]"
                     f", post: {tr['item_title']}"
-                    f", 대여예정일:{tr['rent_at']}"
+                    f", 대여예정일:{tr['rent']}"
                 )
     except Exception as e:
         messagebox.showerror("DB 오류", str(e))
@@ -240,12 +246,15 @@ def open_other_cancelled_transaction_list(user_id):
                 SELECT t.transaction_id, t.post_id, t.rent_at, t.returned_at,
                        t.lender_id, t.borrower_id, t.cancelled_by,
                        u1.nickname AS lender, u2.nickname AS borrower,
-                       i.title     AS item_title             -- 🔄 제목
+                       i.title     AS item_title,             -- 🔄 제목
+                       a.rent_datetime AS rent,
+                       a.return_datetime AS returnt
                 FROM `Transaction` t
                 LEFT JOIN `User` u1 ON t.lender_id  = u1.user_id
                 LEFT JOIN `User` u2 ON t.borrower_id = u2.user_id
                 JOIN  Post  p ON t.post_id = p.post_id
                 JOIN  Item  i ON p.item_id = i.item_id
+                JOIN appointment a ON a.appointment_id = t.appointment_appointment_id
                 WHERE t.transaction_state = 'Cancelled'
                   AND t.cancelled_by != %s
                   AND (t.lender_id = %s OR t.borrower_id = %s)
@@ -263,7 +272,7 @@ def open_other_cancelled_transaction_list(user_id):
                         tk.END,
                         f"취소자({by_role}):{by_name} "
                         f"[거래ID: {tr['transaction_id']}]{tr['item_title']}"
-                        f", 대여예정일:{tr['rent_at']}"
+                        f", 대여예정일:{tr['rent']}"
                     )
     finally:
         conn.close()
@@ -290,15 +299,17 @@ def open_confirmed_transaction_list(user_id):
             with conn.cursor() as cursor:
                 cursor.execute("""
                     SELECT t.transaction_id, t.post_id, t.lender_id, t.borrower_id,
-                           t.rent_at, t.returned_at,
+                           a.rent_datetime AS rent,
+                           a.return_datetime AS returnt,
                            u1.nickname AS lender_nickname,
                            u2.nickname AS borrower_nickname,
-                           i.title     AS item_title           -- 🔄 제목
+                           i.title     AS item_title         
                     FROM `Transaction` t
                     LEFT JOIN `User` u1 ON t.lender_id  = u1.user_id
                     LEFT JOIN `User` u2 ON t.borrower_id = u2.user_id
                     JOIN  Post  p ON t.post_id = p.post_id
                     JOIN  Item  i ON p.item_id = i.item_id
+                    JOIN appointment a ON a.appointment_id = t.appointment_appointment_id
                     WHERE t.transaction_state = 'Confirmed'
                       AND (t.lender_id = %s OR t.borrower_id = %s)
                     ORDER BY t.rent_at DESC
@@ -310,7 +321,7 @@ def open_confirmed_transaction_list(user_id):
                         f"[{tr['transaction_id']}] {tr['item_title']} "
                         f"(post:{tr['post_id']}) - "
                         f"lender:{tr['lender_nickname']} / borrower:{tr['borrower_nickname']} "
-                        f"- 대여일:{tr['rent_at']} / 반납일:{tr['returned_at'] or '미완료'}"
+                        f"- 대여일:{tr['rent']} / 반납예정일:{tr['returnt'] or '미완료'}"
                     )
         except Exception as e:
             messagebox.showerror("DB 오류", str(e))
@@ -350,12 +361,15 @@ def open_expired_transaction_list(user_id):
             cur.execute("""
                 SELECT t.transaction_id, t.post_id, t.rent_at,
                        u1.nickname AS lender, u2.nickname AS borrower,
-                       i.title     AS item_title           -- 🔄 제목
+                       i.title     AS item_title,           -- 🔄 제목
+                       a.rent_datetime AS rent,
+                       a.return_datetime AS returnt
                 FROM `Transaction` t
                 LEFT JOIN `User` u1 ON t.lender_id  = u1.user_id
                 LEFT JOIN `User` u2 ON t.borrower_id = u2.user_id
                 JOIN  Post  p ON t.post_id = p.post_id
                 JOIN  Item  i ON p.item_id = i.item_id
+                JOIN appointment a ON a.appointment_id = t.appointment_appointment_id
                 WHERE t.transaction_state = 'Expired'
                   AND (t.lender_id = %s OR t.borrower_id = %s)
                 ORDER BY t.rent_at DESC
@@ -365,7 +379,6 @@ def open_expired_transaction_list(user_id):
                     tk.END,
                     f"[{tr['transaction_id']}] {tr['item_title']} "
                     f"({tr['lender']} / {tr['borrower']} "
-                    f"({tr['rent_at']})"
                 )
     finally:
         conn.close()
