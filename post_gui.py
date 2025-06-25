@@ -20,7 +20,7 @@ def open_write_post(user_email):
     price_entry = tk.Entry(win)
     price_entry.pack()
 
-    tk.Label(win, text="위치").pack()
+    tk.Label(win, text="거래장소").pack()
     location_entry = tk.Entry(win)
     location_entry.pack()
 
